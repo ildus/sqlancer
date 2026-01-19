@@ -2,15 +2,12 @@ package sqlancer.ingres;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-
-import org.ingres.IngresException;
 
 import sqlancer.IgnoreMeException;
 import sqlancer.Randomly;
@@ -24,14 +21,15 @@ import sqlancer.common.schema.AbstractTables;
 import sqlancer.common.schema.TableIndex;
 import sqlancer.ingres.IngresSchema.IngresTable;
 import sqlancer.ingres.IngresSchema.IngresTable.TableType;
+import sqlancer.ingres.IngresProvider.IngresGlobalState;
 import sqlancer.ingres.ast.IngresConstant;
 
-public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTable> {
+public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable> {
 
     private final String databaseName;
 
     public enum IngresDataType {
-        INT, TEXT, FLOAT;
+        BOOLEAN, INT, TEXT, FLOAT;
 
         public static IngresDataType getRandomType() {
             List<IngresDataType> dataTypes = new ArrayList<>(Arrays.asList(values()));
@@ -84,20 +82,15 @@ public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTabl
                         constant = IngresConstant.createNullConstant();
                     } else {
                         switch (column.getType()) {
+                        case BOOLEAN:
+                            constant = IngresConstant.createBooleanConstant(randomRowValues.getBoolean(columnIndex));
+                            break;
                         case INT:
                             constant = IngresConstant.createIntConstant(randomRowValues.getLong(columnIndex));
                             break;
                         case TEXT:
-                            // Ingres CHAR/VARCHAR often have trailing spaces
                             String val = randomRowValues.getString(columnIndex);
                             constant = IngresConstant.createTextConstant(val != null ? val.trim() : null);
-                            break;
-                        case FLOAT:
-                            // Using Double for high precision floats
-                            constant = IngresConstant.createFloatConstant(randomRowValues.getDouble(columnIndex));
-                            break;
-                        case DATE:
-                            constant = IngresConstant.createDateConstant(randomRowValues.getString(columnIndex));
                             break;
                         default:
                             throw new IgnoreMeException();
@@ -119,6 +112,7 @@ public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTabl
             case "VARCHAR": return IngresDataType.TEXT;
             case "TEXT": return IngresDataType.TEXT;
             case "FLOAT":   return IngresDataType.FLOAT;
+            case "BOOLEAN":   return IngresDataType.BOOLEAN;
             default: return IngresDataType.TEXT;
         }
     }
@@ -132,7 +126,7 @@ public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTabl
     }
 
     public static class IngresTable
-            extends AbstractRelationalTable<IngresColumn, IngresIndex, PostgresGlobalState> {
+            extends AbstractRelationalTable<IngresColumn, IngresIndex, IngresGlobalState> {
 
         public enum TableType {
             STANDARD, TEMPORARY, VIEW
@@ -184,34 +178,6 @@ public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTabl
 
         public static IngresIndex create(String indexName) {
             return new IngresIndex(indexName);
-        }
-    }
-
-    public static IngresSchema fromConnection(SQLConnection con, String databaseName) throws SQLException {
-        try {
-            List<IngresTable> databaseTables = new ArrayList<>();
-            try (Statement s = con.createStatement()) {
-                try (ResultSet rs = s.executeQuery(
-                        "SELECT table_name, table_schema, table_type, is_insertable_into FROM information_schema.tables WHERE table_schema='public' OR table_schema LIKE 'pg_temp_%' ORDER BY table_name;")) {
-                    while (rs.next()) {
-                        String tableName = rs.getString("table_name");
-                        String tableTypeSchema = rs.getString("table_schema");
-                        IngresTable.TableType tableType = getTableType(tableTypeSchema);
-                        List<IngresColumn> databaseColumns = getTableColumns(con, tableName);
-                        List<IngresIndex> indexes = getIndexes(con, tableName);
-                        List<IngresStatObject> statistics = getStatistics(con);
-                        IngresTable t = new IngresTable(tableName, databaseColumns, indexes, tableType, statistics,
-                                tableType == TableType.VIEW, true);
-                        for (IngresColumn c : databaseColumns) {
-                            c.setTable(t);
-                        }
-                        databaseTables.add(t);
-                    }
-                }
-            }
-            return new IngresSchema(databaseTables, databaseName);
-        } catch (SQLIntegrityConstraintViolationException e) {
-            throw new AssertionError(e);
         }
     }
 
@@ -292,18 +258,6 @@ public class IngresSchema extends AbstractSchema<PostgresGlobalState, IngresTabl
             }
         }
         return statistics;
-    }
-
-    protected static IngresTable.TableType getTableType(String tableTypeStr) throws AssertionError {
-        IngresTable.TableType tableType;
-        if (tableTypeStr.contentEquals("public")) {
-            tableType = TableType.STANDARD;
-        } else if (tableTypeStr.startsWith("pg_temp")) {
-            tableType = TableType.TEMPORARY;
-        } else {
-            throw new AssertionError(tableTypeStr);
-        }
-        return tableType;
     }
 
     protected static IngresTable.TableType getTableType(String tableTypeStr) throws AssertionError {

@@ -1,6 +1,5 @@
 package sqlancer.ingres;
 
-import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -11,19 +10,26 @@ import com.google.auto.service.AutoService;
 import sqlancer.AbstractAction;
 import sqlancer.DatabaseProvider;
 import sqlancer.IgnoreMeException;
-import sqlancer.MainOptions;
+//import sqlancer.MainOptions;
 import sqlancer.Randomly;
 import sqlancer.SQLConnection;
 import sqlancer.SQLGlobalState;
 import sqlancer.SQLProviderAdapter;
 import sqlancer.StatementExecutor;
-import sqlancer.common.query.ExpectedErrors;
+//import sqlancer.common.query.ExpectedErrors;
 import sqlancer.common.query.SQLQueryAdapter;
 import sqlancer.common.query.SQLQueryProvider;
-import sqlancer.duckdb.IngresProvider.IngresGlobalState;
+import sqlancer.ingres.IngresProvider.IngresGlobalState;
+import sqlancer.ingres.gen.IngresDeleteGenerator;
+import sqlancer.ingres.gen.IngresInsertGenerator;
+import sqlancer.ingres.gen.IngresTableGenerator;
+import sqlancer.ingres.gen.IngresUpdateGenerator;
 
 @AutoService(DatabaseProvider.class)
 public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, IngresOptions> {
+    protected String databaseName;
+    protected String host;
+    protected int port;
 
     public IngresProvider() {
         super(IngresGlobalState.class, IngresOptions.class);
@@ -31,19 +37,8 @@ public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, Ingres
 
     public enum Action implements AbstractAction<IngresGlobalState> {
         INSERT(IngresInsertGenerator::getQuery), //
-        CREATE_INDEX(IngresIndexGenerator::getQuery), //
         DELETE(IngresDeleteGenerator::generate), //
-        UPDATE(IngresUpdateGenerator::getQuery), //
-        CREATE_VIEW(IngresViewGenerator::generate), //
-        EXPLAIN((g) -> {
-            ExpectedErrors errors = new ExpectedErrors();
-            IngresErrors.addExpressionErrors(errors);
-            IngresErrors.addGroupByErrors(errors);
-            return new SQLQueryAdapter(
-                    "EXPLAIN " + IngresToStringVisitor
-                            .asString(IngresRandomQuerySynthesizer.generateSelect(g, Randomly.smallNumber() + 1)),
-                    errors);
-        });
+        UPDATE(IngresUpdateGenerator::getQuery);
 
         private final SQLQueryProvider<IngresGlobalState> sqlQueryProvider;
 
@@ -62,23 +57,15 @@ public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, Ingres
         switch (a) {
         case INSERT:
             return r.getInteger(0, globalState.getOptions().getMaxNumberInserts());
-        case CREATE_INDEX:
-            if (!globalState.getDbmsSpecificOptions().testIndexes) {
-                return 0;
-            }
-            // fall through
         case UPDATE:
             return r.getInteger(0, globalState.getDbmsSpecificOptions().maxNumUpdates + 1);
-        case EXPLAIN:
-            return r.getInteger(0, 2);
         case DELETE:
             return r.getInteger(0, globalState.getDbmsSpecificOptions().maxNumDeletes + 1);
-        case CREATE_VIEW:
-            return r.getInteger(0, globalState.getDbmsSpecificOptions().maxNumViews + 1);
         default:
             throw new AssertionError(a);
         }
     }
+
 
     public static class IngresGlobalState extends SQLGlobalState<IngresOptions, IngresSchema> {
         @Override
@@ -88,14 +75,32 @@ public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, Ingres
     }
 
     @Override
-    public void generateDatabase(PostgresGlobalState globalState) throws Exception {
-        readFunctions(globalState);
-        createTables(globalState, Randomly.fromOptions(4, 5, 6));
-        prepareTables(globalState);
+    public void generateDatabase(IngresGlobalState globalState) throws Exception {
+        for (int i = 0; i < Randomly.fromOptions(1, 2); i++) {
+            boolean success;
+            do {
+                SQLQueryAdapter qt = new IngresTableGenerator().getQuery(globalState);
+                success = globalState.executeStatement(qt);
+            } while (!success);
+        }
+        if (globalState.getSchema().getDatabaseTables().isEmpty()) {
+            throw new IgnoreMeException(); // TODO
+        }
+        StatementExecutor<IngresGlobalState, Action> se = new StatementExecutor<>(globalState, Action.values(),
+                IngresProvider::mapActions, (q) -> {
+                    if (globalState.getSchema().getDatabaseTables().isEmpty()) {
+                        throw new IgnoreMeException();
+                    }
+                });
+        se.executeStatements();
     }
 
     @Override
     public SQLConnection createDatabase(IngresGlobalState globalState) throws SQLException {
+        databaseName = globalState.getDatabaseName();
+        host = globalState.getOptions().getHost();
+        port = globalState.getOptions().getPort();
+
         try {
             ProcessBuilder pbDestroy = new ProcessBuilder("destroydb", databaseName);
             // Redirecting to inheritIO can help debugging, or use discard
@@ -114,8 +119,7 @@ public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, Ingres
             throw new SQLException("Failed to execute createdb utility", e);
         }
 
-        // 3. Establish the JDBC connection to the newly created database
-        // Ensure url is: jdbc:ingres://localhost:21064/databaseName
+        String url = String.format("%s://%s:%d/%s", "jdbc:ingres", host, port, databaseName);
         Connection conn = DriverManager.getConnection(url);
 
         try (Statement stmt = conn.createStatement()) {
