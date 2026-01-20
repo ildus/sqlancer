@@ -29,6 +29,9 @@ public class IngresTableGenerator {
             sb.append(" ");
             sb.append(columns.get(i).getType());
 
+            if (columns.get(i).length > 0)
+                sb.append(String.format("(%s)", columns.get(i).length));
+
             if (Randomly.getBooleanWithRatherLowProbability()) {
                 sb.append(" NOT NULL");
             }
@@ -46,7 +49,8 @@ public class IngresTableGenerator {
         for (int i = 0; i < Randomly.smallNumber() + 1; i++) {
             String columnName = String.format("c%d", i);
             IngresDataType columnType = IngresDataType.getRandomType();
-            columns.add(new IngresColumn(columnName, columnType));
+
+            columns.add(new IngresColumn(columnName, columnType, 0));
         }
         return columns;
     }

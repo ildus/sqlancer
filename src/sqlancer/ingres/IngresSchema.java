@@ -29,7 +29,7 @@ public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable>
     private final String databaseName;
 
     public enum IngresDataType {
-        BOOLEAN, INT, TEXT, FLOAT;
+        BOOLEAN, INT, VARCHAR, FLOAT;
 
         public static IngresDataType getRandomType() {
             List<IngresDataType> dataTypes = new ArrayList<>(Arrays.asList(values()));
@@ -38,13 +38,24 @@ public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable>
     }
 
     public static class IngresColumn extends AbstractTableColumn<IngresTable, IngresDataType> {
+        public int length;
 
-        public IngresColumn(String name, IngresDataType columnType) {
+        public IngresColumn(String name, IngresDataType columnType, int columnLength) {
             super(name, null, columnType);
+            if (columnLength == 0 && columnType == IngresDataType.BOOLEAN)
+                columnLength = 1;
+            if (columnLength == 0 && columnType == IngresDataType.INT)
+                columnLength = 4;
+            if (columnLength == 0 && columnType == IngresDataType.FLOAT)
+                columnLength = 4;
+            if (columnLength == 0 && columnType == IngresDataType.VARCHAR)
+                columnLength = 255;
+
+            length = columnLength;
         }
 
         public static IngresColumn createDummy(String name) {
-            return new IngresColumn(name, IngresDataType.INT);
+            return new IngresColumn(name, IngresDataType.INT, 0);
         }
 
     }
@@ -88,9 +99,12 @@ public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable>
                         case INT:
                             constant = IngresConstant.createIntConstant(randomRowValues.getLong(columnIndex));
                             break;
-                        case TEXT:
+                        case VARCHAR:
                             String val = randomRowValues.getString(columnIndex);
                             constant = IngresConstant.createTextConstant(val != null ? val.trim() : null);
+                            break;
+                        case FLOAT:
+                            constant = IngresConstant.createFloatConstant((float)randomRowValues.getDouble(columnIndex));
                             break;
                         default:
                             throw new IgnoreMeException();
@@ -109,11 +123,10 @@ public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable>
     private static IngresDataType getColumnType(String type) {
         switch (type) {
             case "INTEGER": return IngresDataType.INT;
-            case "VARCHAR": return IngresDataType.TEXT;
-            case "TEXT": return IngresDataType.TEXT;
+            case "VARCHAR": return IngresDataType.VARCHAR;
             case "FLOAT":   return IngresDataType.FLOAT;
             case "BOOLEAN":   return IngresDataType.BOOLEAN;
-            default: return IngresDataType.TEXT;
+            default: return IngresDataType.VARCHAR;
         }
     }
 
@@ -310,8 +323,10 @@ public class IngresSchema extends AbstractSchema<IngresGlobalState, IngresTable>
                             + tableName + "' ORDER BY column_name")) {
                 while (rs.next()) {
                     String columnName = rs.getString("column_name");
-                    String dataType = rs.getString("data_type");
-                    IngresColumn c = new IngresColumn(columnName, getColumnType(dataType));
+                    String dataType = rs.getString("column_datatype");
+                    int columnLength = Integer.parseInt(rs.getString("column_length"));
+
+                    IngresColumn c = new IngresColumn(columnName, getColumnType(dataType), columnLength);
                     columns.add(c);
                 }
             }

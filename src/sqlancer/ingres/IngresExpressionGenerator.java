@@ -119,7 +119,7 @@ public final class IngresExpressionGenerator extends UntypedExpressionGenerator<
         switch (type) {
         case INT:
             return IngresConstant.createIntConstant(globalState.getRandomly().getInteger());
-        case TEXT:
+        case VARCHAR:
             return IngresConstant.createTextConstant(globalState.getRandomly().getString());
         case BOOLEAN:
             return IngresConstant.createBooleanConstant(Randomly.getBoolean());
@@ -388,7 +388,7 @@ public final class IngresExpressionGenerator extends UntypedExpressionGenerator<
         if (shouldUseAggregate) {
             IngresFunction<IngresAggregateFunction> aggr = new IngresFunction<>(
                     Arrays.asList(new IngresColumnReference(
-                            new IngresColumn("*", IngresDataType.INT))),
+                            new IngresColumn("*", IngresDataType.INT, 0))),
                     IngresAggregateFunction.COUNT);
             select.setFetchColumns(Arrays.asList(aggr));
         } else {
@@ -416,7 +416,7 @@ public final class IngresExpressionGenerator extends UntypedExpressionGenerator<
     @Override
     public List<IngresExpression> generateFetchColumns(boolean shouldCreateDummy) {
         if (Randomly.getBoolean()) {
-            return List.of(new IngresColumnReference(new IngresColumn("*", null)));
+            return List.of(new IngresColumnReference(new IngresColumn("*", null, 0)));
         }
         return Randomly.nonEmptySubset(columns).stream().map(c -> new IngresColumnReference(c))
                 .collect(Collectors.toList());

@@ -70,7 +70,7 @@ public abstract class IngresConstant implements IngresExpression {
                 return this;
             case INT:
                 return IngresConstant.createIntConstant(value ? 1 : 0);
-            case TEXT:
+            case VARCHAR:
                 return IngresConstant.createTextConstant(value ? "true" : "false");
             default:
                 return null;
@@ -168,7 +168,7 @@ public abstract class IngresConstant implements IngresExpression {
 
         @Override
         public IngresConstant cast(IngresDataType type) {
-            if (type == IngresDataType.TEXT) {
+            if (type == IngresDataType.VARCHAR) {
                 return this;
             }
             String s = value.trim();
@@ -191,7 +191,7 @@ public abstract class IngresConstant implements IngresExpression {
                 } catch (NumberFormatException e) {
                     return IngresConstant.createIntConstant(-1);
                 }
-            case TEXT:
+            case VARCHAR:
                 return this;
             default:
                 return null;
@@ -200,7 +200,7 @@ public abstract class IngresConstant implements IngresExpression {
 
         @Override
         public IngresDataType getExpressionType() {
-            return IngresDataType.TEXT;
+            return IngresDataType.VARCHAR;
         }
 
         @Override
@@ -286,7 +286,7 @@ public abstract class IngresConstant implements IngresExpression {
                 return IngresConstant.createBooleanConstant(val != 0);
             case INT:
                 return this;
-            case TEXT:
+            case VARCHAR:
                 return IngresConstant.createTextConstant(String.valueOf(val));
             default:
                 return null;

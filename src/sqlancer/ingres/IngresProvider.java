@@ -119,7 +119,7 @@ public class IngresProvider extends SQLProviderAdapter<IngresGlobalState, Ingres
             throw new SQLException("Failed to execute createdb utility", e);
         }
 
-        String url = String.format("%s://%s:%d/%s", "jdbc:ingres", host, port, databaseName);
+        String url = String.format("%s://%s:IK7/%s", "jdbc:ingres", host, databaseName);
         Connection conn = DriverManager.getConnection(url);
 
         try (Statement stmt = conn.createStatement()) {
